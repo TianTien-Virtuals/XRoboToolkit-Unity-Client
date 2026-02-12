@@ -54,6 +54,22 @@ namespace Robot
         {
             _appVersion = Application.version;
             _sendThread = new Thread(OnSendThread);
+            // Ensure main-thread dispatcher exists so we can safely log from background threads
+            UnityMainThreadDispatcher.Instance();
+        }
+
+        /// <summary>Call LogWindow from background threads (ConnectCallback, OnDataReceived, send thread).</summary>
+        private static void LogOnMainThread(string message, bool isError = false, bool isWarn = false)
+        {
+            UnityMainThreadDispatcher.Instance().Enqueue(() =>
+            {
+                if (isError)
+                    LogWindow.Error(message);
+                else if (isWarn)
+                    LogWindow.Warn(message);
+                else
+                    LogWindow.Info(message);
+            });
         }
 
         public SocketState State
@@ -123,7 +139,6 @@ namespace Robot
                     _reconnectEnable = true;
                     socket.EndConnect(async);
                     _state = SocketState.WORKING;
-                    LogWindow.Info("TCP socket connection established successfully");
 
                     if (_sendThread.ThreadState == ThreadState.Unstarted)
                     {
@@ -135,10 +150,16 @@ namespace Robot
                         receiveBuffer.GetRemainCapacity(), SocketFlags.None, OnDataReceived,
                         socket);
                     _connectInited = false;
-                    if (!string.IsNullOrEmpty(_deviceSN))
+
+                    string deviceSN = _deviceSN;
+                    UnityMainThreadDispatcher.Instance().Enqueue(() =>
                     {
-                        ConnectInit();
-                    }
+                        LogWindow.Info("TCP socket connection established successfully");
+                        if (!string.IsNullOrEmpty(deviceSN))
+                        {
+                            ConnectInit();
+                        }
+                    });
 
                     Debug.Log(Tag + "Socket Connected!  ");
                 }
@@ -146,14 +167,15 @@ namespace Robot
                 {
                     _state = SocketState.CONNECT_ERROR;
                     ConnectErrorInfo = "connect error";
-                    LogWindow.Error("TCP connection failed - socket not connected");
+                    LogOnMainThread("TCP connection failed - socket not connected", isError: true);
                     Debug.LogError(Tag + "connect Error");
                 }
             }
             catch (Exception e)
             {
                 ConnectErrorInfo = e.ToString();
-                LogWindow.Error($"TCP connection exception: {e.Message}");
+                string msg = e.Message;
+                LogOnMainThread($"TCP connection exception: {msg}", isError: true);
                 Debug.LogError(Tag + "Connect error,Exception " + e);
                 _state = SocketState.CONNECT_ERROR;
             }
@@ -218,14 +240,15 @@ namespace Robot
                 }
                 else
                 {
-                    LogWindow.Warn("TCP client disconnected - no data received");
+                    LogOnMainThread("TCP client disconnected - no data received", isWarn: true);
                     Debug.Log("Client disconnected.");
                     Close();
                 }
             }
             catch (Exception ex)
             {
-                LogWindow.Error($"TCP data receive error: {ex.Message}");
+                string msg = ex.Message;
+                LogOnMainThread($"TCP data receive error: {msg}", isError: true);
                 Debug.LogError($"Error: {ex.Message}");
                 Close();
             }
@@ -387,7 +410,7 @@ namespace Robot
                                         if (sendData.Cmd == NetCMD.PACKET_CCMD_SEND_VERSION)
                                         {
                                             //This message has been successfully sent, indicating the establishment of communication with the PC side
-                                            LogWindow.Info("PC connection established - version packet sent successfully");
+                                            LogOnMainThread("PC connection established - version packet sent successfully");
                                             Debug.Log("pc connected !");
                                             _connectInited = true;
                                         }
@@ -400,7 +423,7 @@ namespace Robot
 
                                 if (socketError != SocketError.Success)
                                 {
-                                    LogWindow.Error($"TCP send error: {socketError}");
+                                    LogOnMainThread($"TCP send error: {socketError}", isError: true);
                                     Debug.LogError(Tag + "send SocketError:" + socketError);
                                     Close();
                                     break;
@@ -431,7 +454,7 @@ namespace Robot
 
                                     if (socketError != SocketError.Success)
                                     {
-                                        LogWindow.Error($"TCP tracking data send error: {socketError}");
+                                        LogOnMainThread($"TCP tracking data send error: {socketError}", isError: true);
                                         Debug.LogError(Tag + "SocketError:" + socketError);
                                         Close();
                                         continue;
@@ -451,7 +474,8 @@ namespace Robot
                 }
                 catch (Exception e)
                 {
-                    LogWindow.Error($"TCP send thread error: {e.Message}");
+                    string msg = e.Message;
+                    LogOnMainThread($"TCP send thread error: {msg}", isError: true);
                     Debug.LogError(Tag + "Error OnSendThread:" + e);
                     Close();
                 }
@@ -470,7 +494,9 @@ namespace Robot
 
         public void Close()
         {
-            LogWindow.Info("Closing TCP connection");
+            bool hadConnection = _socket != null && _socket.Connected;
+            if (hadConnection)
+                LogOnMainThread("Closing TCP connection");
             Debug.Log(Tag + "Close:");
             if (_receivePackages != null)
             {
@@ -495,7 +521,8 @@ namespace Robot
                     }
                     catch (Exception e)
                     {
-                        LogWindow.Error($"TCP socket cleanup error: {e.Message}");
+                        string msg = e.Message;
+                        LogOnMainThread($"TCP socket cleanup error: {msg}", isError: true);
                         Debug.LogError(Tag + "Clear Error:" + e);
                     }
                 }

@@ -25,7 +25,7 @@ public class UIUdpReceiver : MonoBehaviour
         IpSelectDialog.SetActive(false);
     }
 
-
+    // WE CAN CHANGE THE NAME HERE - we get from a list of previously input IPs
     private HashSet<string> _receiveIps = new HashSet<string>();
 
     private void ReceiveUdpIP(NetPacket package)
@@ -68,6 +68,7 @@ public class UIUdpReceiver : MonoBehaviour
     {
         _closed = true;
         UdpReceiver.Close();
-        IpSelectDialog.SetActive(false);
+        // IpSelectDialog.SetActive(false);
+        uiOperate.ShowDashboard();
     }
 }

@@ -40,9 +40,23 @@ public class UIOperate : MonoBehaviour
 
     public Dropdown videoSourceDropdown;
 
+
+    [Header("Dashboard / Settings panels")]
+    public GameObject DashboardPanel;
+    public GameObject SettingPanel;
+
     // Start is called before the first frame update
     private void Awake()
     {
+        // Default: show dashboard when assigned, else show settings so UI is visible
+        if (DashboardPanel != null)
+        {
+            DashboardPanel.SetActive(true);
+            if (SettingPanel != null) SettingPanel.SetActive(false);
+        }
+        else if (SettingPanel != null)
+            SettingPanel.SetActive(true);
+
 #if UNITY_EDITOR
         if (Simulator != null)
         {
@@ -85,6 +99,20 @@ public class UIOperate : MonoBehaviour
         sourceConfig.Initialize();
     }
 
+    /// <summary>Show dashboard, hide settings. Call from Dashboard panel button (e.g. Back).</summary>
+    public void ShowDashboard()
+    {
+        if (DashboardPanel != null) DashboardPanel.SetActive(true);
+        if (SettingPanel != null) SettingPanel.SetActive(false);
+    }
+
+    /// <summary>Hide dashboard, show settings. Call from Dashboard panel button (e.g. Settings).</summary>
+    public void ShowSettings()
+    {
+        // if (DashboardPanel != null) DashboardPanel.SetActive(false);
+        if (SettingPanel != null) SettingPanel.SetActive(true);
+    }
+
     private void OnSourceConfigOnOnInitialized()
     {
         // Update videoSourceDropdown options
@@ -118,15 +146,52 @@ public class UIOperate : MonoBehaviour
 
     public void TcpConnect(string ip)
     {
-        TargetIP.text = "PC Service: " + ip;
+        // TargetIP.text = "PC Service: " + ip;
+        TargetIP.text = ip;
         ReconnectBtn.gameObject.SetActive(true);
         TcpHandler.Connect(ip);
         ConnectSuccess();
+
+        //In here we automatically set the tracking and start send
+        
+        // Select all three trackers    
+        TrackingData.SetHeadOn(true);
+        TrackingData.SetControllerOn(true);
+        TrackingData.SetHandTrackingOn(true);
+
+        // OnBodyModeDrop
+        // Set Mode to Full-Body
+        TrackingData.TrackingType tType = TrackingData.TrackingType.Body;
+        int res = 0;
+        bool support = false;
+        MotionTrackerMode trackingMode = PXR_MotionTracking.GetMotionTrackerMode();
+        
+        if (trackingMode != MotionTrackerMode.BodyTracking)
+        {
+            res = PXR_MotionTracking.CheckMotionTrackerModeAndNumber(MotionTrackerMode.BodyTracking,
+                MotionTrackerNum.TWO);
+        }
+        PXR_MotionTracking.GetBodyTrackingSupported(ref support);
+
+        // UpdateBodyTracking()
+        // TrackingData.TrackingType tType = TrackingData.TrackingType.Body;
+        BodyTrackingBoneLength boneLength = new BodyTrackingBoneLength();
+        MotionTrackerConnectState state = new MotionTrackerConnectState();
+        PXR_MotionTracking.GetMotionTrackerConnectStateWithSN(ref state);
+        BodyTrackingMode mode = BodyTrackingMode.BTM_FULL_BODY_LOW; //Do we choose high or low?
+        // BodyTrackingMode mode = BodyTrackingMode.BTM_FULL_BODY_HIGH;
+        // Enable full body motion capture default mode
+        int ret = PXR_MotionTracking.StartBodyTracking(mode, boneLength);
+        TrackingData.SetTrackingType(tType);
+        
+        // Click send
+        TcpHandler.SendTrackingData = true;
     }
 
     public void ConnectSuccess()
     {
-        TargetIP.text = "PC Service: " + TcpHandler.GetTargetIP;
+        // TargetIP.text = "PC Service: " + TcpHandler.GetTargetIP;
+        TargetIP.text = TcpHandler.GetTargetIP;
     }
 
     private void OnBindEnterpriseService(bool bind)
@@ -341,7 +406,6 @@ public class UIOperate : MonoBehaviour
         {
             MotionTrackerConnectState state = new MotionTrackerConnectState();
             PXR_MotionTracking.GetMotionTrackerConnectStateWithSN(ref state);
-            //  PXR_MotionTracking.GetMotionTrackerConnectStateWithSN(ref state);
             TrackNum.text = "Num: " + state.trackerSum;
 
             if (tType == TrackingData.TrackingType.Body)

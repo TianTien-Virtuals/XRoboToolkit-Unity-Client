@@ -27,6 +27,10 @@ public class IpInputDialog : MonoBehaviour
         Remind.text = "";
         ConnectBtn.gameObject.SetActive(true);
         _connecting = false;
+        // Pre-fill with last connected IP stored on device
+        string lastIp = UIOperate.GetLastConnectedIP();
+        if (TmpInput != null && !string.IsNullOrEmpty(lastIp))
+            TmpInput.text = lastIp;
     }
 
     private void OnCloseBtn()
@@ -45,6 +49,7 @@ public class IpInputDialog : MonoBehaviour
 
         SetRemind(LogType.Log, "Connecting...");
         _connecting = true;
+        UIOperate.SaveLastConnectedIP(ip);
         TcpHandler.Connect(ip);
         ConnectBtn.gameObject.SetActive(false);
     }

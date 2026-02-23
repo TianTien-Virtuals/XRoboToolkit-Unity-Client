@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using Robot;
 using Robot.Conf;
@@ -44,6 +45,9 @@ public class UIOperate : MonoBehaviour
     [Header("Dashboard / Settings panels")]
     public GameObject DashboardPanel;
     public GameObject SettingPanel;
+
+    /// <summary>False until first successful TCP connection; then true so Reconnect uses normal Reconnect().</summary>
+    private bool _firstConnection = false;
 
     // Start is called before the first frame update
     private void Awake()
@@ -97,20 +101,41 @@ public class UIOperate : MonoBehaviour
         sourceConfig.OnInitialized += OnSourceConfigOnOnInitialized;
         // Initialize video source configuration
         sourceConfig.Initialize();
+
+        if (TcpHandler != null)
+            TcpHandler.OnConnected += () => _firstConnection = true;
+    }
+
+    private void Start()
+    {
+        // Show last connected IP on main UI at startup and set TcpHandler address so Reconnect uses it
+        string lastIp = GetLastConnectedIP();
+        if (!string.IsNullOrEmpty(lastIp))
+        {
+            if (TargetIP != null)
+                TargetIP.text = lastIp;
+            if (TcpHandler != null)
+                TcpHandler.SetAddress(lastIp);
+        }
     }
 
     /// <summary>Show dashboard, hide settings. Call from Dashboard panel button (e.g. Back).</summary>
     public void ShowDashboard()
     {
-        if (DashboardPanel != null) DashboardPanel.SetActive(true);
-        if (SettingPanel != null) SettingPanel.SetActive(false);
+        // Activate dashboard first so the Settings button is visible and can reopen Settings later
+        if (DashboardPanel != null)
+            DashboardPanel.SetActive(true);
+        if (SettingPanel != null)
+            SettingPanel.SetActive(false);
     }
 
     /// <summary>Hide dashboard, show settings. Call from Dashboard panel button (e.g. Settings).</summary>
     public void ShowSettings()
     {
-        // if (DashboardPanel != null) DashboardPanel.SetActive(false);
-        if (SettingPanel != null) SettingPanel.SetActive(true);
+        if (DashboardPanel != null) 
+            DashboardPanel.SetActive(false);
+        if (SettingPanel != null)
+            SettingPanel.SetActive(true);
     }
 
     private void OnSourceConfigOnOnInitialized()
@@ -141,14 +166,72 @@ public class UIOperate : MonoBehaviour
 
     private void OnReconnectBtn()
     {
-        TcpHandler.Reconnect();
+        if (!_firstConnection)
+        {
+            // No connection made yet: run full TcpConnect with last IP (UI, tracking, send)
+            string ip = GetLastConnectedIP() ?? TcpHandler.GetTargetIP;
+            if (!string.IsNullOrEmpty(ip))
+                TcpConnect(ip);
+            else
+                TcpHandler.Reconnect();
+        }
+        else
+        {
+            TcpHandler.Reconnect();
+        }
+    }
+
+    /// <summary>Filename for last connected IP under Application.persistentDataPath.</summary>
+    public const string LastIPFileName = "LastConnectedIP.txt";
+
+    /// <summary>Full path where the last IP is stored.</summary>
+    public static string LastIPFilePath => Path.Combine(Application.persistentDataPath, LastIPFileName);
+
+    /// <summary>Returns the last saved IP, or null if none.</summary>
+    public static string GetLastConnectedIP()
+    {
+        string path = LastIPFilePath;
+        if (!File.Exists(path))
+            return null;
+        try
+        {
+            string ip = File.ReadAllText(path).Trim();
+            return string.IsNullOrWhiteSpace(ip) ? null : ip;
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[UIOperate] Could not read last IP from {path}: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Saves the given IP to Application.persistentDataPath for next session.</summary>
+    public static void SaveLastConnectedIP(string ip)
+    {
+        if (string.IsNullOrWhiteSpace(ip))
+            return;
+        ip = ip.Trim();
+        string path = LastIPFilePath;
+        try
+        {
+            File.WriteAllText(path, ip);
+            LogWindow.Info($"Stored IP for next session: {ip} (saved to {path})");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[UIOperate] Could not save last IP to {path}: {e.Message}");
+        }
     }
 
     public void TcpConnect(string ip)
     {
+        if (string.IsNullOrWhiteSpace(ip))
+            return;
+        ip = ip.Trim();
         // TargetIP.text = "PC Service: " + ip;
         TargetIP.text = ip;
         ReconnectBtn.gameObject.SetActive(true);
+        SaveLastConnectedIP(ip);
         TcpHandler.Connect(ip);
         ConnectSuccess();
 

@@ -26,6 +26,9 @@ namespace Robot
         public static event ReceiveMassage ReceiveEvent;
         public static event ReceiveFunctionMsg ReceiveFunctionEvent;
 
+        /// <summary>Fired on main thread when TCP connection is established.</summary>
+        public event Action OnConnected;
+
         public static bool SendTrackingData = false;
         private static object _sendObject = new object();
         private Queue<NetPacket> _receivePackages = new Queue<NetPacket>();
@@ -83,6 +86,13 @@ namespace Robot
         public static string GetTargetIP
         {
             get { return _address; }
+        }
+
+        /// <summary>Set the address used for Reconnect (e.g. from last saved IP at startup). Does not connect.</summary>
+        public void SetAddress(string address)
+        {
+            if (!string.IsNullOrWhiteSpace(address))
+                _address = address.Trim();
         }
 
         public void Connect(string address)
@@ -155,6 +165,7 @@ namespace Robot
                     UnityMainThreadDispatcher.Instance().Enqueue(() =>
                     {
                         LogWindow.Info("TCP socket connection established successfully");
+                        OnConnected?.Invoke();
                         if (!string.IsNullOrEmpty(deviceSN))
                         {
                             ConnectInit();
